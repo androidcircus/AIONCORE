@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  orchestrator:
+    build: ./backend/orchestrator
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock
+    restart: unless-stopped
+
+  worker:
+    build: ./backend/workers
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - /var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock
+      - /var/lib/libvirt/images:/var/lib/libvirt/images
+      - /tmp:/tmp
+    privileged: true
+    restart: unless-stopped
+
+  beat:
+    build: ./backend/workers
+    env_file: .env
+    command: ["celery", "-A", "tasks", "beat", "--loglevel=info"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis-data:
