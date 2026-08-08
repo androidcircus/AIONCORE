@@ -1,0 +1,9 @@
+celery
+redis
+requests
+beautifulsoup4
+fastapi
+uvicorn
+bcrypt
+PyJWT
+libvirt-python
