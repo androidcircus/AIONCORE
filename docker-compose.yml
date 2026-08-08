@@ -1,51 +1,33 @@
-version: "3.8"
-
+version: '3.8'
 services:
   redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
+    image: redis:alpine
+    ports: ["6379:6379"]
+  postgres:
+    image: postgres:15
+    environment: { POSTGRES_DB: aion, POSTGRES_USER: aion, POSTGRES_PASSWORD: aion }
+    volumes: [pg_data:/var/lib/postgresql/data]
+    ports: ["5432:5432"]
   orchestrator:
     build: ./backend/orchestrator
-    ports:
-      - "8000:8000"
-    env_file: .env
-    depends_on:
-      redis:
-        condition: service_healthy
-    volumes:
-      - /var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock
-    restart: unless-stopped
-
+    ports: ["8000:8000"]
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
+      - DATABASE_URL=postgresql://aion:aion@postgres/aion
+      - REDIS_URL=redis://redis:6379/0
+    depends_on: [postgres, redis]
   worker:
     build: ./backend/workers
-    env_file: .env
-    depends_on:
-      redis:
-        condition: service_healthy
-    volumes:
-      - /var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock
-      - /var/lib/libvirt/images:/var/lib/libvirt/images
-      - /tmp:/tmp
-    privileged: true
-    restart: unless-stopped
-
-  beat:
-    build: ./backend/workers
-    env_file: .env
-    command: ["celery", "-A", "tasks", "beat", "--loglevel=info"]
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
+    environment: { REDIS_URL: redis://redis:6379/0 }
+    depends_on: [redis]
+    command: celery -A tasks worker --loglevel=info --concurrency=1
+    volumes: [/var/run/docker.sock:/var/run/docker.sock, /tmp/clones:/tmp/clones]
+  nginx:
+    image: nginx:alpine
+    ports: ["80:80"]
+    volumes: [./frontend:/usr/share/nginx/html, ./nginx.conf:/etc/nginx/conf.d/default.conf]
+    depends_on: [orchestrator]
 volumes:
-  redis-data:
+  pg_data:
